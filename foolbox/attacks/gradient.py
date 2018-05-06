@@ -86,7 +86,7 @@ class IterativeGradientAttack(Attack):
 
     @call_decorator
     def __call__(self, input_or_adv, label=None, unpack=True,
-                 epsilons=100, steps=10):
+                 epsilons=100, steps=10, max_epsilon=1):
 
         """Like GradientAttack but with several steps for each epsilon.
 
@@ -106,8 +106,10 @@ class IterativeGradientAttack(Attack):
             Either Iterable of step sizes in the gradient direction
             or number of step sizes between 0 and max_epsilon that should
             be tried.
+        steps : int
+            Number of gradient steps of size epsilon to do
         max_epsilon : float
-            Largest step size if epsilons is not an iterable.
+            Largest step size epsilon if epsilons is not an iterable.
 
         """
 
@@ -124,7 +126,9 @@ class IterativeGradientAttack(Attack):
 
         if not isinstance(epsilons, Iterable):
             assert isinstance(epsilons, int)
-            epsilons = np.linspace(0, 1 / steps, num=epsilons + 1)[1:]
+            epsilons = np.linspace(0, 
+                                   max_epsilon / steps,
+                                   num=epsilons + 1)[1:]
 
         for epsilon in epsilons:
             perturbed = image
