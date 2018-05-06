@@ -3,9 +3,9 @@ import numpy as np
 from collections import Iterable
 import logging
 
+from .iterators import LinearSearchIterator, BinarySearchIterator
 from .base import Attack
 from .base import call_decorator
-
 
 class GradientAttack(Attack):
     """Perturbs the image with the gradient of the loss w.r.t. the image,
@@ -17,7 +17,7 @@ class GradientAttack(Attack):
 
     @call_decorator
     def __call__(self, input_or_adv, label=None, unpack=True,
-                 epsilons=1000, max_epsilon=1):
+                 epsilons=1000, max_epsilon=1, bin_search=False):
 
         """Perturbs the image with the gradient of the loss w.r.t. the image,
         gradually increasing the magnitude until the image is misclassified.
@@ -40,6 +40,10 @@ class GradientAttack(Attack):
             be tried.
         max_epsilon : float
             Largest step size if epsilons is not an iterable.
+        bin_search : bool
+            If true, use binary search to find the smallest epsilon that
+            generates an adversatial perturbation. This assumes epsilons
+            is an int or an *ordered* iterable.
 
         """
 
@@ -64,19 +68,26 @@ class GradientAttack(Attack):
             decrease_if_first = False
 
         for _ in range(2):  # to repeat with decreased epsilons if necessary
-            for i, epsilon in enumerate(epsilons):
+            if bin_search:
+                iterator = BinarySearchIterator(epsilons) 
+            else:
+                iterator = LinearSearchIterator(epsilons)
+
+            for i, epsilon in iterator:
                 perturbed = image + gradient * epsilon
                 perturbed = np.clip(perturbed, min_, max_)
 
                 _, is_adversarial = a.predictions(perturbed)
-                if is_adversarial:
-                    if decrease_if_first and i < 20:
-                        logging.info('repeating attack with smaller epsilons')
-                        break
-                    return
 
-            max_epsilon = epsilons[i]
-            epsilons = np.linspace(0, max_epsilon, num=20 + 1)[1:]
+                # update iterator:
+                iterator.is_adversarial = is_adversarial
+
+            if is_adversarial and decrease_if_first and iterator.i < 20:
+                logging.info('repeating attack with smaller epsilons')
+                max_epsilon = epsilons[i]
+                epsilons = np.linspace(0, max_epsilon, num=20 + 1)[1:]
+            else:
+                return
 
 
 class IterativeGradientAttack(Attack):
@@ -86,7 +97,8 @@ class IterativeGradientAttack(Attack):
 
     @call_decorator
     def __call__(self, input_or_adv, label=None, unpack=True,
-                 epsilons=100, steps=10, max_epsilon=1, stop_early=False):
+                 epsilons=100, steps=10, max_epsilon=1, 
+                 stop_early=None, bin_search=False):
 
         """Like GradientAttack but with several steps for each epsilon.
 
@@ -110,9 +122,14 @@ class IterativeGradientAttack(Attack):
             Number of gradient steps of size epsilon to do
         max_epsilon : float
             Largest step size epsilon if epsilons is not an iterable.
-        stop_early: bool
+        stop_early : bool
             If true, stop incrementing epsilon as soon as an adversarial
             image is found at the end of the 'steps' steps.
+            Must be true if bin_search is true. Defaults to bin_search.
+        bin_search : bool
+            If true, use binary search to find the smallest epsilon that 
+            generates an adversatial perturbation. This assumes epsilons 
+            is an int or an *ordered* iterable.
 
         """
 
@@ -124,6 +141,11 @@ class IterativeGradientAttack(Attack):
         if not a.has_gradient():
             return
 
+        if stop_early is None:
+            stop_early = bin_search
+        assert (stop_early, bin_search) != (False, True), "When bin_search "\
+               "is true, stop_early must be set to true as well"
+
         image = a.original_image
         min_, max_ = a.bounds()
 
@@ -133,7 +155,12 @@ class IterativeGradientAttack(Attack):
                                    max_epsilon / steps,
                                    num=epsilons + 1)[1:]
 
-        for epsilon in epsilons:
+        if bin_search:
+            iterator = BinarySearchIterator(epsilons) 
+        else:
+            iterator = LinearSearchIterator(epsilons, stop_early)
+
+        for i, epsilon in iterator:
             perturbed = image
 
             for _ in range(steps):
@@ -145,12 +172,9 @@ class IterativeGradientAttack(Attack):
                 perturbed = np.clip(perturbed, min_, max_)
 
                 _, is_adversarial = a.predictions(perturbed)
-                # even if is_adversarial == True, we finish all steps
-                # for this epsilon, because the adv. image may still be
-                # improved
 
-            if stop_early and is_adversarial:
-                return
-                # beware: there might be a different epsilon that 
-                # results in a better adversarial. To be sure,
-                # use stop_early = False
+            iterator.is_adversarial = is_adversarial
+            # Beware: if stop_early is true, the iterator will stop
+            # as soon as it found the smallest epsilon giving an
+            # adversarial perturbation. But there might be a bigger 
+            # epsilon that leads to a smaller adversarial perturbation.
