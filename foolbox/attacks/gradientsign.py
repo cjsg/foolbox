@@ -88,7 +88,7 @@ class IterativeGradientSignAttack(Attack):
 
     @call_decorator
     def __call__(self, input_or_adv, label=None, unpack=True,
-                 epsilons=100, steps=10, max_epsilon=1):
+                 epsilons=100, steps=10, max_epsilon=1, stop_early=False):
 
         """Like GradientSignAttack but with several steps for each epsilon.
 
@@ -112,6 +112,9 @@ class IterativeGradientSignAttack(Attack):
             Number of gradient steps of size epsilon to do
         max_epsilon : float
             Largest step size if epsilons is not an iterable.
+        stop_early: bool
+            If true, stop incrementing epsilon as soon as an adversarial
+            image is found at the end of the 'steps' steps.
 
         """
 
@@ -142,7 +145,13 @@ class IterativeGradientSignAttack(Attack):
                 perturbed = perturbed + gradient_sign * epsilon
                 perturbed = np.clip(perturbed, min_, max_)
 
-                a.predictions(perturbed)
-                # we don't return early if an adversarial was found
-                # because there might be a different epsilon
-                # and/or step that results in a better adversarial
+                _, is_adversarial = a.predictions(perturbed)
+                # even if is_adversarial == True, we finish all steps
+                # for this epsilon, because the adv. image may still be
+                # improved
+
+            if stop_early and is_adversarial:
+                return
+                # beware: there might be a different epsilon that 
+                # results in a better adversarial. To be sure,
+                # use stop_early = False
