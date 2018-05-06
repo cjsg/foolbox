@@ -153,29 +153,40 @@ class IterativeGradientSignAttack(Attack):
 
         if not isinstance(epsilons, Iterable):
             assert isinstance(epsilons, int)
+            decrease_if_first = True
             epsilons = np.linspace(0, 
                                    max_epsilon / steps,
                                    num=epsilons + 1)[1:]
+        else:
+            decrease_if_first = False
 
         if bin_search:
             iterator = BinarySearchIterator(epsilons) 
         else:
             iterator = LinearSearchIterator(epsilons, stop_early)
 
-        for i, epsilon in iterator:
-            perturbed = image
+        for _ in range(2):
+            for i, epsilon in iterator:
+                perturbed = image
 
-            for _ in range(steps):
-                gradient = a.gradient(perturbed)
-                gradient_sign = np.sign(gradient) * (max_ - min_)
+                for _ in range(steps):
+                    gradient = a.gradient(perturbed)
+                    gradient_sign = np.sign(gradient) * (max_ - min_)
 
-                perturbed = perturbed + gradient_sign * epsilon
-                perturbed = np.clip(perturbed, min_, max_)
+                    perturbed = perturbed + gradient_sign * epsilon
+                    perturbed = np.clip(perturbed, min_, max_)
 
-                _, is_adversarial = a.predictions(perturbed)
+                    _, is_adversarial = a.predictions(perturbed)
 
-            iterator.is_adversarial = is_adversarial
-            # Beware: if stop_early is true, the iterator will stop
-            # as soon as it found the smallest epsilon giving an
-            # adversarial perturbation. But there might be a bigger 
-            # epsilon that leads to a smaller adversarial perturbation.
+                iterator.is_adversarial = is_adversarial
+                # Beware: if stop_early is true, the iterator will stop
+                # as soon as it found the smallest epsilon giving an
+                # adversarial perturbation. But there might be a bigger 
+                # epsilon that leads to a smaller adversarial perturbation.
+
+            if is_adversarial and decrease_if_first and iterator.i < 20:
+                logging.info('repeating attack with smaller epsilons')
+                max_epsilon = epsilons[i]
+                epsilons = np.linspace(0, max_epsilon, num=20 + 1)[1:]
+            else:
+                return

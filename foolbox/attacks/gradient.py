@@ -151,30 +151,42 @@ class IterativeGradientAttack(Attack):
 
         if not isinstance(epsilons, Iterable):
             assert isinstance(epsilons, int)
+            decrease_if_first = True
             epsilons = np.linspace(0, 
                                    max_epsilon / steps,
                                    num=epsilons + 1)[1:]
-
-        if bin_search:
-            iterator = BinarySearchIterator(epsilons) 
         else:
-            iterator = LinearSearchIterator(epsilons, stop_early)
+            decrease_if_first = False
 
-        for i, epsilon in iterator:
-            perturbed = image
+        for _ in range(2):
+            if bin_search:
+                iterator = BinarySearchIterator(epsilons) 
+            else:
+                iterator = LinearSearchIterator(epsilons, stop_early)
 
-            for _ in range(steps):
-                gradient = a.gradient(perturbed)
-                gradient_norm = np.sqrt(np.mean(np.square(gradient)))
-                gradient = gradient / (gradient_norm + 1e-8) * (max_ - min_)
+            # TODO: add 'make smaller' option if epsilon to small
+            for i, epsilon in iterator:
+                perturbed = image
 
-                perturbed = perturbed + gradient * epsilon
-                perturbed = np.clip(perturbed, min_, max_)
+                for _ in range(steps):
+                    gradient = a.gradient(perturbed)
+                    gradient_norm = np.sqrt(np.mean(np.square(gradient)))
+                    gradient = gradient / (gradient_norm + 1e-8) * (max_ - min_)
 
-                _, is_adversarial = a.predictions(perturbed)
+                    perturbed = perturbed + gradient * epsilon
+                    perturbed = np.clip(perturbed, min_, max_)
 
-            iterator.is_adversarial = is_adversarial
-            # Beware: if stop_early is true, the iterator will stop
-            # as soon as it found the smallest epsilon giving an
-            # adversarial perturbation. But there might be a bigger 
-            # epsilon that leads to a smaller adversarial perturbation.
+                    _, is_adversarial = a.predictions(perturbed)
+
+                iterator.is_adversarial = is_adversarial
+                # Beware: if stop_early is true, the iterator will stop
+                # as soon as it found the smallest epsilon giving an
+                # adversarial perturbation. But there might be a bigger 
+                # epsilon that leads to a smaller adversarial perturbation.
+
+            if is_adversarial and decrease_if_first and iterator.i < 20:
+                logging.info('repeating attack with smaller epsilons')
+                max_epsilon = epsilons[i]
+                epsilons = np.linspace(0, max_epsilon, num=20 + 1)[1:]
+            else:
+                return
