@@ -19,6 +19,14 @@ def test_attack_eps(bn_adversarial):
     assert adv.distance.value < np.inf
 
 
+def test_attack_bin_search(bn_adversarial):
+    adv = bn_adversarial
+    attack = Attack()
+    attack(adv, bin_search=True)
+    assert adv.image is not None
+    assert adv.distance.value < np.inf
+
+
 def test_attack_gl(gl_bn_adversarial):
     adv = gl_bn_adversarial
     attack = Attack()
