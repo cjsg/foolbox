@@ -7,6 +7,7 @@ from .iterators import LinearSearchIterator, BinarySearchIterator
 from .base import Attack
 from .base import call_decorator
 
+
 class GradientSignAttack(Attack):
     """Adds the sign of the gradient to the image, gradually increasing
     the magnitude until the image is misclassified.
@@ -146,7 +147,7 @@ class IterativeGradientSignAttack(Attack):
         if stop_early is None:
             stop_early = bin_search
         assert (stop_early, bin_search) != (False, True), "When bin_search "\
-               "is true, stop_early must be set to true as well"
+            "is true, stop_early must be set to true as well"
 
         image = a.original_image
         min_, max_ = a.bounds()

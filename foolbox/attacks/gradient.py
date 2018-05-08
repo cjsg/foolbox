@@ -7,6 +7,7 @@ from .iterators import LinearSearchIterator, BinarySearchIterator
 from .base import Attack
 from .base import call_decorator
 
+
 class GradientAttack(Attack):
     """Perturbs the image with the gradient of the loss w.r.t. the image,
     gradually increasing the magnitude until the image is misclassified.
@@ -144,7 +145,7 @@ class IterativeGradientAttack(Attack):
         if stop_early is None:
             stop_early = bin_search
         assert (stop_early, bin_search) != (False, True), "When bin_search "\
-               "is true, stop_early must be set to true as well"
+            "is true, stop_early must be set to true as well"
 
         image = a.original_image
         min_, max_ = a.bounds()
@@ -171,7 +172,8 @@ class IterativeGradientAttack(Attack):
                 for _ in range(steps):
                     gradient = a.gradient(perturbed)
                     gradient_norm = np.sqrt(np.mean(np.square(gradient)))
-                    gradient = gradient / (gradient_norm + 1e-8) * (max_ - min_)
+                    gradient = gradient / (gradient_norm + 1e-8) * (
+                        max_ - min_)
 
                     perturbed = perturbed + gradient * epsilon
                     perturbed = np.clip(perturbed, min_, max_)
