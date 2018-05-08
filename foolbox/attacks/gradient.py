@@ -69,7 +69,7 @@ class GradientAttack(Attack):
 
         for _ in range(2):  # to repeat with decreased epsilons if necessary
             if bin_search:
-                iterator = BinarySearchIterator(epsilons) 
+                iterator = BinarySearchIterator(epsilons)
             else:
                 iterator = LinearSearchIterator(epsilons)
 
@@ -97,7 +97,7 @@ class IterativeGradientAttack(Attack):
 
     @call_decorator
     def __call__(self, input_or_adv, label=None, unpack=True,
-                 epsilons=100, steps=10, max_epsilon=1, 
+                 epsilons=100, steps=10, max_epsilon=1,
                  stop_early=None, bin_search=False):
 
         """Like GradientAttack but with several steps for each epsilon.
@@ -127,8 +127,8 @@ class IterativeGradientAttack(Attack):
             image is found at the end of the 'steps' steps.
             Must be true if bin_search is true. Defaults to bin_search.
         bin_search : bool
-            If true, use binary search to find the smallest epsilon that 
-            generates an adversatial perturbation. This assumes epsilons 
+            If true, use binary search to find the smallest epsilon that
+            generates an adversatial perturbation. This assumes epsilons
             is an int or an *ordered* iterable.
 
         """
@@ -152,7 +152,7 @@ class IterativeGradientAttack(Attack):
         if not isinstance(epsilons, Iterable):
             assert isinstance(epsilons, int)
             decrease_if_first = True
-            epsilons = np.linspace(0, 
+            epsilons = np.linspace(0,
                                    max_epsilon / steps,
                                    num=epsilons + 1)[1:]
         else:
@@ -160,7 +160,7 @@ class IterativeGradientAttack(Attack):
 
         for _ in range(2):
             if bin_search:
-                iterator = BinarySearchIterator(epsilons) 
+                iterator = BinarySearchIterator(epsilons)
             else:
                 iterator = LinearSearchIterator(epsilons, stop_early)
 
@@ -181,7 +181,7 @@ class IterativeGradientAttack(Attack):
                 iterator.is_adversarial = is_adversarial
                 # Beware: if stop_early is true, the iterator will stop
                 # as soon as it found the smallest epsilon giving an
-                # adversarial perturbation. But there might be a bigger 
+                # adversarial perturbation. But there might be a bigger
                 # epsilon that leads to a smaller adversarial perturbation.
 
             if is_adversarial and decrease_if_first and iterator.i < 20:
