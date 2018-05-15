@@ -59,7 +59,7 @@ class GradientAttack(Attack):
         image = a.original_image
         min_, max_ = a.bounds()
         gradient = a.gradient()
-        gradient_norm = np.sqrt(np.mean(np.square(gradient)))
+        gradient_norm = np.sqrt(np.sum(np.square(gradient)))
         gradient = gradient / (gradient_norm + 1e-8) * (max_ - min_)
 
         if not isinstance(epsilons, Iterable):
@@ -171,7 +171,7 @@ class IterativeGradientAttack(Attack):
 
                 for _ in range(steps):
                     gradient = a.gradient(perturbed)
-                    gradient_norm = np.sqrt(np.mean(np.square(gradient)))
+                    gradient_norm = np.sqrt(np.sum(np.square(gradient)))
                     gradient = gradient / (gradient_norm + 1e-8) * (
                         max_ - min_)
 
