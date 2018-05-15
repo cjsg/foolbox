@@ -66,8 +66,7 @@ class Attack(ABC):
 
 def call_decorator(call_fn):
     @functools.wraps(call_fn)
-    def wrapper(self, input_or_adv, label=None,
-                unpack=True, distance=MSE, **kwargs):
+    def wrapper(self, input_or_adv, label=None, unpack=True, **kwargs):
         assert input_or_adv is not None
 
         if isinstance(input_or_adv, Adversarial):
@@ -76,6 +75,8 @@ def call_decorator(call_fn):
                 raise ValueError('Label must not be passed when input_or_adv'
                                  ' is an Adversarial instance')
         else:
+            distance = kwargs['distance'] if 'distance' in kwargs else MSE
+
             if label is None:
                 raise ValueError('Label must be passed when input_or_adv is'
                                  ' not an Adversarial instance')
