@@ -11,6 +11,7 @@ else:  # pragma: no cover
 
 from ..adversarial import Adversarial
 from ..criteria import Misclassification
+from ..distances import MSE
 
 
 class Attack(ABC):
@@ -65,7 +66,8 @@ class Attack(ABC):
 
 def call_decorator(call_fn):
     @functools.wraps(call_fn)
-    def wrapper(self, input_or_adv, label=None, unpack=True, **kwargs):
+    def wrapper(self, input_or_adv, label=None,
+                unpack=True, distance=MSE, **kwargs):
         assert input_or_adv is not None
 
         if isinstance(input_or_adv, Adversarial):
@@ -85,7 +87,8 @@ def call_decorator(call_fn):
                                      ' with a model and a criterion or it'
                                      ' needs to be called with an Adversarial'
                                      ' instance.')
-                a = Adversarial(model, criterion, input_or_adv, label)
+                a = Adversarial(model, criterion,
+                                input_or_adv, label, distance)
 
         assert a is not None
 

@@ -6,6 +6,7 @@ import logging
 from .iterators import LinearSearchIterator, BinarySearchIterator
 from .base import Attack
 from .base import call_decorator
+from ..distances import Linfinity
 
 
 class GradientSignAttack(Attack):
@@ -18,7 +19,8 @@ class GradientSignAttack(Attack):
 
     @call_decorator
     def __call__(self, input_or_adv, label=None, unpack=True,
-                 epsilons=1000, max_epsilon=1, bin_search=False):
+                 epsilons=1000, max_epsilon=1, bin_search=False,
+                 distance=Linfinity):
 
         """Adds the sign of the gradient to the image, gradually increasing
         the magnitude until the image is misclassified.
@@ -45,6 +47,9 @@ class GradientSignAttack(Attack):
             If true, use binary search to find the smallest epsilon that
             generates an adversatial perturbation. This assumes epsilons
             is an int or an *ordered* iterable.
+        distance : foolbox.distances
+            The distance used to measure the similarity between images. 
+            Defaults to Linfinity.
 
         """
 
@@ -101,7 +106,7 @@ class IterativeGradientSignAttack(Attack):
     @call_decorator
     def __call__(self, input_or_adv, label=None, unpack=True,
                  epsilons=100, steps=10, max_epsilon=1,
-                 stop_early=None, bin_search=False):
+                 stop_early=None, bin_search=False, distance=Linifinity):
 
         """Like GradientSignAttack but with several steps for each epsilon.
 
@@ -133,6 +138,9 @@ class IterativeGradientSignAttack(Attack):
             If true, use binary search to find the smallest epsilon that
             generates an adversatial perturbation. This assumes epsilons
             is an int or an *ordered* iterable.
+        distance : foolbox.distances
+            The distance used to measure the similarity between images. 
+            Defaults to Linfinity.
 
         """
 
