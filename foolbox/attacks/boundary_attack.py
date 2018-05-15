@@ -75,7 +75,7 @@ class BoundaryAttack(Attack):
             threaded_gen=True,
             alternative_generator=False,
             internal_dtype=np.float64,
-            verbose=False):
+            verbose=None):
 
         """Applies the Boundary Attack.
 
@@ -143,7 +143,8 @@ class BoundaryAttack(Attack):
         self.internal_dtype = internal_dtype
         self.verbose = verbose
 
-        if not verbose:
+        if verbose is None:
+            verbose = False
             print('run with verbose=True to see details')
 
         if alternative_generator:
@@ -671,7 +672,7 @@ class BoundaryAttack(Attack):
         init_attack(a)
 
     def log_step(self, step, distance, message='', always=False):
-        if not always and step % self.log_every_n_steps != 0:
+        if not always and (step+1) % self.log_every_n_steps != 0:
             return
         print('Step {}: {:.5e}, stepsizes = {:.1e}/{:.1e}: {}'.format(
             step,
