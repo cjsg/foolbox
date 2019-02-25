@@ -12,11 +12,13 @@ Models
    Model
    DifferentiableModel
    TensorFlowModel
+   TensorFlowEagerModel
    PyTorchModel
    KerasModel
    TheanoModel
    LasagneModel
    MXNetModel
+   MXNetGluonModel
 
 Wrappers
 --------
@@ -25,7 +27,9 @@ Wrappers
    :nosignatures:
 
    ModelWrapper
-   GradientLess
+   DifferentiableModelWrapper
+   ModelWithoutGradients
+   ModelWithEstimatedGradients
    CompositeModel
 
 Detailed description
@@ -40,6 +44,9 @@ Detailed description
 .. autoclass:: TensorFlowModel
    :members:
 
+.. autoclass:: TensorFlowEagerModel
+   :members:
+
 .. autoclass:: PyTorchModel
    :members:
 
@@ -52,10 +59,22 @@ Detailed description
 .. autoclass:: LasagneModel
    :members:
 
+.. autoclass:: MXNetModel
+   :members:
+
+.. autoclass:: MXNetGluonModel
+   :members:
+
 .. autoclass:: ModelWrapper
    :members:
 
-.. autoclass:: GradientLess
+.. autoclass:: DifferentiableModelWrapper
+   :members:
+
+.. autoclass:: ModelWithoutGradients
+   :members:
+
+.. autoclass:: ModelWithEstimatedGradients
    :members:
 
 .. autoclass:: CompositeModel

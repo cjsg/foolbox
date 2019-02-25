@@ -1,5 +1,4 @@
 from __future__ import division
-import random
 import logging
 
 import numpy as np
@@ -9,6 +8,7 @@ from .base import Attack
 from .base import call_decorator
 from .gradient import GradientAttack
 from ..utils import crossentropy as utils_ce
+from .. import rng
 
 
 class LBFGSAttack(Attack):
@@ -88,6 +88,9 @@ class LBFGSAttack(Attack):
 
         target_class = a.target_class()
         if target_class is None:
+            if num_random_targets == 0 and self._approximate_gradient:
+                num_random_targets = 1
+
             if num_random_targets == 0:
                 gradient_attack = GradientAttack()
                 gradient_attack(a)
@@ -96,14 +99,12 @@ class LBFGSAttack(Attack):
                     # using GradientAttack did not work,
                     # falling back to random target
                     num_random_targets = 1
-                    logging.info('Using GradientAttack to determine a target class failed, falling back to a random target class')  # noqa: E501
+                    logging.warning('Using GradientAttack to determine a target class failed, falling back to a random target class')  # noqa: E501
                 else:
                     logits, _ = a.predictions(adv_img)
                     target_class = np.argmax(logits)
                     target_classes = [target_class]
                     logging.info('Determined a target class using the GradientAttack: {}'.format(target_class))  # noqa: E501
-            else:
-                num_random_targets = 1
 
             if num_random_targets > 0:
 
@@ -117,7 +118,7 @@ class LBFGSAttack(Attack):
                 # remove original class from samples
                 # should be more efficient than other approaches, see
                 # https://github.com/numpy/numpy/issues/2764
-                target_classes = random.sample(
+                target_classes = rng.sample(
                     range(num_classes), num_random_targets + 1)
                 target_classes = [t for t in target_classes if t != original_class]  # noqa: E501
                 target_classes = target_classes[:num_random_targets]

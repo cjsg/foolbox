@@ -1,8 +1,8 @@
 # flake8: noqa
 
 from .base import Attack
-from .gradientsign import FGSM, GradientSignAttack, IterativeGradientSignAttack
-from .gradient import GradientAttack, IterativeGradientAttack
+from .gradient import GradientAttack, GradientSignAttack, FGSM
+from .iterative_gradient import IterativeGradientAttack, IterativeGradientSignAttack
 from .lbfgs import LBFGSAttack, ApproximateLBFGSAttack
 from .deepfool import DeepFoolAttack, DeepFoolL2Attack, DeepFoolLinfinityAttack
 from .saliency import SaliencyMapAttack
@@ -16,3 +16,15 @@ from .saltandpepper import SaltAndPepperNoiseAttack
 from .precomputed import PrecomputedImagesAttack
 from .boundary_attack import BoundaryAttack
 from .pointwise import PointwiseAttack
+from .binarization import BinarizationRefinementAttack
+from .newtonfool import NewtonFoolAttack
+from .adef_attack import ADefAttack
+from .spatial import SpatialAttack
+from .carlini_wagner import CarliniWagnerL2Attack
+
+from .iterative_projected_gradient import LinfinityBasicIterativeAttack, BasicIterativeMethod, BIM
+from .iterative_projected_gradient import L1BasicIterativeAttack
+from .iterative_projected_gradient import L2BasicIterativeAttack
+from .iterative_projected_gradient import ProjectedGradientDescentAttack, ProjectedGradientDescent, PGD
+from .iterative_projected_gradient import RandomStartProjectedGradientDescentAttack, RandomProjectedGradientDescent, RandomPGD
+from .iterative_projected_gradient import MomentumIterativeAttack, MomentumIterativeMethod

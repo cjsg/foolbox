@@ -1,11 +1,3 @@
-.. image:: http://bethgelab.org/media/banners/benchmark_banner_small.png
-    :target: https://robust.vision/benchmark
-
-You might want to have a look at our recently announced `Robust Vision Benchmark <https://robust.vision/benchmark>`__.
-
-------------
-
-
 .. image:: https://readthedocs.org/projects/foolbox/badge/?version=latest
     :target: https://foolbox.readthedocs.io/en/latest/
 
@@ -65,8 +57,11 @@ Example
    # ::-1 reverses the color channels, because Keras ResNet50 expects BGR instead of RGB
    attack = foolbox.attacks.FGSM(fmodel)
    adversarial = attack(image[:, :, ::-1], label)
+   # if the attack fails, adversarial will be None and a warning will be printed
 
-The result can be plotted like this:
+For more examples, have a look at the `documentation <https://foolbox.readthedocs.io/en/latest/user/examples.html>`__.
+
+Finally, the result can be plotted like this:
 
 .. code-block:: python
 
@@ -120,10 +115,12 @@ Feature requests and bug reports
 
 We welcome feature requests and bug reports. Just create a new issue on `GitHub <https://github.com/bethgelab/foolbox/issues/new>`__.
 
-Questions
+Questions & FAQ
 ---------
 
 Depending on the nature of your question feel free to post it as an issue on `GitHub <https://github.com/bethgelab/foolbox/issues/new>`__, or post it as a question on `Stack Overflow <https://stackoverflow.com>`_ using the `foolbox` tag. We will try to monitor that tag but if you don't get an answer don't hesitate to contact us.
+
+Before you post a question, please check our `FAQ <https://foolbox.readthedocs.io/en/latest/user/faq.html>`__ and our Documentation on `ReadTheDocs <https://foolbox.readthedocs.io/en/latest/index.html>`__.
 
 Contributions welcome
 ----------------------
@@ -160,3 +157,9 @@ Authors
 * `Jonas Rauber <https://github.com/jonasrauber>`_
 * `Wieland Brendel <https://github.com/wielandbrendel>`_
 
+------------
+
+.. image:: http://bethgelab.org/media/banners/benchmark_banner_small.png
+    :target: https://robust.vision/benchmark
+
+You might want to have a look at our recently announced `Robust Vision Benchmark <https://robust.vision/benchmark>`__.
