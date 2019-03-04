@@ -1,18 +1,14 @@
-import torch
 import numpy as np
 
-# TODO: use numpy instead of pytorch
 
+def get_label(logits, stochastic=None, count=True):
+    """Returns the label from logits (argmax if stochastic is true, sample
+    otherwise)
 
-def get_label(X, net, stochastic=None, count=True):
-    """Returns the label assigned by net to X.
-
-    X : `torch.tensor`
-        The images to be classified with dimensions bs x c x w x h.
-    net : `torch.nn.module`
-        The classification network. Must return class-logits.
+    logits : `numpy.ndarray`
+        The logits from which to sample or get the max label.
     stochastic : bool
-        If True, then the label is sampled from the logits net(X). If False,
+        If True, then the label is sampled from the logits. If False,
         then the label is the maximal logit value. If None, uses the value of
         get_label.stochastic. Defaults to True.
     count : bool
@@ -20,11 +16,6 @@ def get_label(X, net, stochastic=None, count=True):
         the total number of function calls. Defaults to True.
 
     """
-
-    from torch.distributions.categorical import Categorical
-
-    classes = ('plane', 'car', 'bird', 'cat', 'deer',   # TODO: no classes
-               'dog', 'frog', 'horse', 'ship', 'truck')
 
     if count:
         if hasattr(get_label, 'count'):
@@ -41,36 +32,79 @@ def get_label(X, net, stochastic=None, count=True):
         stochastic = get_label.stochastic
 
     if stochastic:
-        out = net(X)
-        m = Categorical(logits=out)
-        y = m.sample()
-        return y.item(), classes[y.item()]
-
+        p = softmax(logits)
+        y = np.random.choice(np.arange(len(p)), p=p)
     else:
-        _, y = torch.max(net(X), 1)
-        return y.item(), classes[y.item()]
+        y = np.argmax(logits)
+    return y
 
 
-def find_boundary(net, X1, X2):
+def softmax(X, theta=1.0, axis=None):
+    """ Compute the softmax of each element along an axis of X.
+
+    From https://nolanbconaway.github.io/blog/2017/softmax-numpy
+
+    Parameters
+    ----------
+    X: `numpy.ndarray`. Probably should be floats.
+    theta (optional): float parameter, used as a multiplier
+        prior to exponentiation. Default = 1.0
+    axis (optional): axis to compute values along. Default is the
+        first non-singleton axis.
+
+    Returns an array the same size as X. The result will sum to 1
+    along the specified axis.
+    """
+
+    # make X at least 2d
+    y = np.atleast_2d(X)
+
+    # find axis
+    if axis is None:
+        axis = next(j[0] for j in enumerate(y.shape) if j[1] > 1)
+
+    # multiply y against the theta parameter,
+    y = y * float(theta)
+
+    # subtract the max for numerical stability
+    y = y - np.expand_dims(np.max(y, axis=axis), axis)
+
+    # exponentiate y
+    y = np.exp(y)
+
+    # take the sum along the specified axis
+    ax_sum = np.expand_dims(np.sum(y, axis=axis), axis)
+
+    # finally: divide elementwise
+    p = y / ax_sum
+
+    # flatten if X was 1D
+    if len(X.shape) == 1:
+        p = p.flatten()
+
+    return p
+
+
+def find_boundary(a, X2):
     """Find image on the classification boundary between X1 and X2.
 
     Computes get_label(net(X)) for every X on the line from X1 to X2 with
     step-size .01 and stops after the first label switch. find_boundary returns
     an error if net assigns the same label to X1 and X2.
 
-    net : `torch.nn.module`
-        The classification network. Must return logits.
-    X1 : `torch.tensor`
-        The original image (for which we search an adversary).
-    X2 : `torch.tensor`
-        Any image that does not get assigned the same label than X1 by net.
+    a : :class:`Adversarial`
+        An :class:`Adversarial` instance.
+    X2 : `numpy.ndarray`
+        Any image that does not get assigned the same label than
+        a.original_class.
 
     """
 
-    net.eval()
+    X1 = a.original_image
+    y1 = a.original_class
 
-    _, y1 = torch.max(net(X1), 1)
-    _, y2 = torch.max(net(X2), 1)
+    logits = a.predictions(X2)
+    y2 = get_label(logits, stochastic=False, count=False)
 
     if y1 == y2:
         raise Exception(
@@ -79,7 +113,8 @@ def find_boundary(net, X1, X2):
     X_prev = X1
     for p in np.arange(0, 1, .01):
         X = (1-p)*X1 + p*X2
-        _, y = torch.max(net(X), 1)  # TODO: use get_label!!
+        logits = a.predictions(X)
+        y = get_label(logits, stochastic=False, count=False)
         if y != y1:
             break
         X_prev = X
@@ -90,71 +125,19 @@ def find_boundary(net, X1, X2):
     return X, X_prev, p
 
 
-def distance(X, X_t):
-    """Compute the l2-distance between X and X_t
+def compute_cos(W, X, a):
+    y_t = a.original_class
+    y_a = a.adversarial_class
+    # logits = a.output
+    # y_a = get_label(logits, stochastic=False, count=False)
 
-    """
-    x = X.view(1, -1)
-    x_t = X_t.view(1, -1)
-    return (x-x_t).norm(p=2).item()
+    in_gradient = np.zeros(a.num_classes()).astype('float32')
+    in_gradient[y_t] = 1
+    in_gradient[y_a] = -1
 
+    G = a.backward(in_gradient, X)  # grad(net(X)[y_t] - net(X)[y_a])
 
-def compute_cos(W, X, y_t, net):
-    from torch.autograd import grad
+    w = W.flatten()
+    g = G.flatten()
 
-    X.requires_grad = True
-    out = net(X)
-    _, y = torch.max(net(X), 1)
-    y = y.item()
-
-    if y_t != y:
-        f = out[0, y_t] - out[0, y]
-    else:
-        _, ixs = torch.topk(out, 2)
-        f = out[0, y_t] - out[0, ixs[0, 1]]
-
-    G = grad(f, X)[0]  # torch.sign(grad(f, X)[0])
-    X.requires_grad = False
-
-    w = W.view(1, -1)
-    g = G.view(1, -1)
-
-    # ## Print the cosinus between g and g.sign()  -> \approx .6
-    # g_ = torch.sign(g)
-    # print(((g_ * g).sum(dim=1) / (g_.norm(p=2) * g.norm(p=2))).item())
-
-    return ((w * g).sum(dim=1) / (w.norm(p=2) * g.norm(p=2))).item()
-
-
-def initialize_weights(X, y_o, y_t, net, steps=20):
-    # updates classification weights W, return 0 if able to switch labels
-    # W = current weight matrix to update
-    # X = current image (1 x 3 x 32 x 32)
-    # y_o = current label (at img X)
-    # y_t = label of original target image X_t
-    # net = the network
-    net.eval()
-    cum_W = torch.zeros_like(X)
-
-    for _ in range(steps):
-
-        dX = torch.randn_like(X)
-        dX = dX / dX.norm(p=2).item()
-        sgn = -1 if y_o == y_t else 1
-
-        # epsilons = 10**np.linspace(-3,0,num=10)
-        epsilons = [.5]
-        for eps in epsilons:
-            X_ = X + eps*dX
-            y, _ = get_label(X_, net)
-            if y != y_o:
-                cum_W.data += sgn * (dX.data / eps)
-                break
-
-            X_ = X - eps*dX
-            y, _ = get_label(X_, net)
-            if y != y_o:
-                cum_W.data -= sgn * (dX.data / eps)
-                break
-
-    return cum_W / steps
+    return (w * g).sum() / (np.linalg.norm(w) * np.linalg.norm(g))

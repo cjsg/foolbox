@@ -1,39 +1,39 @@
 import random
-import torch
+import numpy as np
 from .improved_boundary_utils import get_label
 
-# TODO: rewrite these functions without pytorch
+# TODO: sample images without pytorch
+# TODO: rewrite extract_img_patch function without pytorch
+# TODO: check image format
 
 
-class PixelWeightEstimator(object):
-    def __init__(self, perturbation_size=.5, min_pix=-2.5, max_pix=2.5):
-        self.eps = perturbation_size
-        self.min_pix = min_pix
-        self.max_pix = max_pix
+class PixelSampler(object):
+    def __init__(self, perturb_size=.5, *args, **xargs):
+        self.eps = perturb_size
 
     def __call__(self, X, y, a, W, *args, **xargs):
-        net.eval()
+        min_, max_ = a.bounds()
 
         sgn = -1 if y == a.original_class else 1
         ix = self.sample_random_ix(X)
         dX = np.zeros_like(X)
         dX[ix] = 1.
 
-        X_ = np.clip(X + self.eps * dX, self.min_pix, self.max_pix)
-        # y_, _ = get_label(X_, net)
-        y_ = a.predictions(X_)
+        X_ = np.clip(X + self.eps * dX, min_, max_)
+        logits, _ = a.predictions(X_)
+        y_ = get_label(logits)
         if y_ != y:
             dX = (X_ - X) / self.eps  # accounting for the clamping
-            return sgn * dX / self.eps, X_
+            return sgn * dX / self.eps
 
-        X_ = np.clip(X - self.eps * dX, self.min_pix, self.max_pix)
-        # y_, _ = get_label(X_, net)
-        y_ = a.predictions(X_)
+        X_ = np.clip(X - self.eps * dX, min_, max_)
+        logits, _ = a.predictions(X_)
+        y_ = get_label(logits)
         if y_ != y:
             dX = - (X_ - X) / self.eps
-            return -sgn * dX / self.eps, X_
+            return -sgn * dX / self.eps
 
-        return np.zeros_like(X), X_
+        return np.zeros_like(X)
 
     def sample_random_ix(self, X):
         ixs = []
@@ -43,50 +43,62 @@ class PixelWeightEstimator(object):
         return tuple(ixs)
 
 
-class GaussianWeightEstimator(object):
-    def __init__(self,
-                 perturbation_size=.5,
-                 min_pix=-2.5,
-                 max_pix=2.5,
-                 *args, **xargs):
+class GaussianSampler(object):
+    def __init__(self, perturb_size=.5, *args, **xargs):
+        self.eps = perturb_size
 
-        self.eps = perturbation_size
-        self.min_pix = min_pix
-        self.max_pix = max_pix
+    def __call__(self, X, y, a, W, *args, **xargs):
+        min_, max_ = a.bounds()
+        X_o = a.original_image
 
-    def __call__(self, X, y, a, W, X_t, *args, **xargs):
-        net.eval()
-
-        dX = torch.randn_like(X)
-        dX = dX / dX.norm(p=2).item()
+        dX = np.random.randn(*X.shape).astype('float32')
+        dX = dX / np.linalg.norm(dX)
         sgn = -1 if y == a.original_class else 1
 
-        # if torch.sign((dX * W).sum()) < 0.:
-        if torch.sign((dX * (X_t - X)).sum()) < 0.:
+        # if np.sign((dX * W).sum()) < 0.:
+        if np.sign((dX * (X_o - X)).sum()) < 0.:
             dX = -dX
 
-        X_ = np.clip(X + sgn * self.eps * dX, self.min_pix, self.max_pix)
-        # y_, _ = get_label(X_, net)
-        y_ = a.predictions(X_)
+        X_ = np.clip(X + sgn * self.eps * dX, min_, max_)
+        logits, _ = a.predictions(X_)
+        y_ = get_label(logits)
         if y_ != y:
             dX = (X_ - X) / (sgn*self.eps)
-            return dX / self.eps, X_  # boundary normal direction estimate
+            return dX / self.eps
 
-        X_ = np.clip(X - sgn * self.eps * dX, self.min_pix, self.max_pix)
-        # y_, _ = get_label(X_, net)
-        y_ = a.predictions(X_)
+        X_ = np.clip(X - sgn * self.eps * dX, min_, max_)
+        logits, _ = a.predictions(X_)
+        y_ = get_label(logits)
         if y_ != y:
             dX = - (X_ - X) / (sgn*self.eps)
-            return - dX / self.eps, X_  # boundary normal direction estimate
+            return - dX / self.eps
 
-        return np.zeros_like(X), X_
+        return np.zeros_like(X)
 
 
-class ImageWeightEstimator(object):
+class OptimalSampler(object):
+    def __init__(self, *args, **xargs):
+        return
+
+    def __call__(self, X, y, a, *args, **xargs):
+        y_o = a.original_class
+        y_a = a.adversarial_class
+
+        in_gradient = np.zeros(a.num_classes()).astype('float32')
+        in_gradient[y_o] = 1
+        in_gradient[y_a] = -1
+
+        W_ = a.backward(in_gradient, X)  # grad(net(X)[y_o] - net(X)[y])
+        return W_
+
+
+# ######################################################################## #
+# ######## WARNING: the following classes/functions use pytorch ########## #
+# ######################################################################## #
+
+class ImageSampler(object):
     def __init__(self,
-                 perturbation_size=.5,
-                 min_pix=-2.5,
-                 max_pix=2.5,
+                 perturb_size=.5,
                  crop_size=None,
                  loader=None,
                  datafolder='~/datasets/cifar10/',
@@ -96,9 +108,7 @@ class ImageWeightEstimator(object):
         import torchvision
         import torchvision.transforms as transforms
 
-        self.eps = perturbation_size
-        self.min_pix = min_pix
-        self.max_pix = max_pix
+        self.eps = perturb_size
         self.crop_size = crop_size
 
         if loader is None:
@@ -118,8 +128,9 @@ class ImageWeightEstimator(object):
 
         self.dataiter = iter(self.loader)
 
-    def __call__(self, X, y, a, W, X_t, *args, **xargs):
-        import torch
+    def __call__(self, X, y, a, W, *args, **xargs):
+        min_, max_ = a.bounds()
+        X_o = a.original_image
 
         try:
             dX, _ = next(self.dataiter)
@@ -127,46 +138,48 @@ class ImageWeightEstimator(object):
             self.dataiter = iter(self.loader)
             dX, _ = next(self.dataiter)
 
-        dX = (dX / dX.norm(p=2).item()).detach().cpu().numpy()
+        dX = dX.detach().cpu().numpy().reshape(*X.shape)
+        dX = dX / np.linalg.norm(dX)
         sgn = -1 if y == a.original_class else 1
 
         if self.crop_size is not None:
+            # TODO: check here
             # note that ||dX||_2 \neq 1 anymore if cropping
             dX = extract_img_patch(dX, size=self.crop_size)
 
         # if np.sign((dX * W).sum()) < 0.:
-        if np.sign((dX * (X_t - X)).sum()) < 0.:
+        if np.sign((dX * (X_o - X)).sum()) < 0.:
             dX = -dX
 
-        X_ = (X + sgn * self.eps * dX).clamp(self.min_pix, self.max_pix)
-        y_, _ = get_label(X_, net)
+        X_ = np.clip(X + sgn * self.eps * dX, min_, max_)
+        logits, _ = a.predictions(X_)
+        y_ = get_label(logits)
         if y_ != y:
             dX = (X_ - X) / (sgn*self.eps)
-            return dX / self.eps, X_  # boundary normal direction estimate
+            return dX / self.eps  # boundary normal direction estimate
 
-        X_ = (X - sgn * self.eps * dX).clamp(self.min_pix, self.max_pix)
-        y_, _ = get_label(X_, net)
+        X_ = np.clip(X - sgn * self.eps * dX, min_, max_)
+        logits, _ = a.predictions(X_)
+        y_ = get_label(logits)
         if y_ != y:
             dX = - (X_ - X) / (sgn*self.eps)
-            return - dX / self.eps, X_  # boundary normal direction estimate
+            return - dX / self.eps  # boundary normal direction estimate
 
-        return torch.zeros_like(X), X_
+        return np.zeros_like(X)
 
 
-class PlugPatchWeightEstimator(object):
+class PlugPatchSampler(object):
     def __init__(self,
-                 min_pix=-2.5,
-                 max_pix=2.5,
                  crop_size=5,
                  loader=None,
                  datafolder='~/datasets/cifar10/',
                  *args, **xargs):
 
+        import torch
         import torchvision
         import torchvision.transforms as transforms
+        # TODO: beware, check the image format (HWC or CHW)
 
-        self.min_pix = min_pix
-        self.max_pix = max_pix
         self.crop_size = crop_size
 
         if loader is None:
@@ -186,8 +199,8 @@ class PlugPatchWeightEstimator(object):
 
         self.dataiter = iter(self.loader)
 
-    def __call__(self, X, y, y_t, net, W, X_t, *args, **xargs):
-        net.eval()
+    def __call__(self, X, y, a, W, *args, **xargs):
+        min_, max_ = a.bounds()
 
         try:
             dX, _ = next(self.dataiter)
@@ -195,43 +208,27 @@ class PlugPatchWeightEstimator(object):
             self.dataiter = iter(self.loader)
             dX, _ = next(self.dataiter)
 
+        dX = dX.detach.cpu().numpy()
         # Note that ||dX||_2 \neq 1 anymore if cropping
         dX, mask = extract_img_patch(dX, size=self.crop_size, with_mask=True)
-        X_ = X * (torch.ones_like(X) - mask) + dX
-        X_ = torch.clamp(X_, self.min_pix, self.max_pix)
+        X_ = X * (np.ones_like(X) - mask) + dX
+        X_ = np.clip(X_, min_, max_)
         dX = X_ - X
 
-        sgn = -1 if y == y_t else 1
-        y_, _ = get_label(X_, net)
+        sgn = -1 if y == a.original_class else 1
+        logits, _ = a.predictions(X_)
+        y_ = get_label(logits)
         if y_ != y:
-            return sgn * dX, X_  # boundary normal direction estimate
+            return sgn * dX  # boundary normal direction estimate
 
-        return torch.zeros_like(X), X_
-
-
-class OptimalWeightEstimator(object):
-    def __init__(self, *args, **xargs):
-        return
-
-    def __call__(self, X, y, y_t, net, *args, **xargs):
-        from torch.autograd import grad
-
-        X.requires_grad = True
-        out = net(X)
-        get_label.count += 1
-
-        if y_t != y:
-            f = out[0, y_t] - out[0, y]
-        else:
-            _, ixs = torch.topk(out, 2)
-            f = out[0, y_t] - out[0, ixs[0, 1]]
-
-        W_ = grad(f, X)[0]
-        X.requires_grad = False
-        return W_, torch.zeros_like(X)
+        return np.zeros_like(X)
 
 
+# TODO: check here
+# TODO: check for image format (HWC or CHW)
 def extract_img_patch(X, size=5, with_mask=False):
+    import torch
+
     height = X.size(3)
     ix1 = random.randint(0, height-size)
     ixs1 = torch.arange(ix1, ix1+size)

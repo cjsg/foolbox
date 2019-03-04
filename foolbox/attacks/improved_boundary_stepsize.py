@@ -1,12 +1,19 @@
 import numpy as np
+from scipy.special import erf
 from .improved_boundary_smoothers import DoubleExponentialSmoother
 
 # only for GPstepSizeHandler
-import torch
 from collections import deque
 
 
-# TODO: Implement constant step-size handler
+class ConstantStepSizeHandler(object):
+    """A step size handler that keeps the step-size constant.
+    """
+    def __init__(self, initial_sz):
+        self.sz = initial_sz
+
+    def update(self, *args, **kwargs):
+        return self.sz
 
 
 class RLStepSizeHandler(object):
@@ -247,14 +254,14 @@ class GPStepSizeHandler(object):
 
     def _linear_fit(self, lags, vario_cloud):  # linear regression
         # TODO: do a smoothing before.
-        X = torch.FloatTensor(lags).view(-1, 1)
+        X = np.array(lags).reshape(-1, 1)
         X_tr = X.transpose(0, 1)
-        y_tr = torch.FloatTensor(vario_cloud).view(1, -1)
-        f = y_tr @ (X @ (X_tr @ X + 1e-6).inverse())  # slope
+        y_tr = np.array(vario_cloud).reshape(1, -1)
+        f = y_tr @ (X @ np.linalg.inv(X_tr @ X + 1e-6))  # slope
         return f  # f(x) = f @ x
 
     def _sz_with_max_expected_impr(self, slope):
-        step_sizes = 10**torch.arange(-4, 1, step=.25)
+        step_sizes = 10**np.arange(-4, 1, step=.25)
         max_expected_impr = -np.inf
         max_sz = -np.inf
         for sz in step_sizes:
@@ -266,21 +273,21 @@ class GPStepSizeHandler(object):
 
     def _expected_impr(self, sz, slope):
         v_hat = (slope * sz)
-        s_hat = v_hat.sqrt()
+        s_hat = np.sqrt(v_hat)
         sz = sz.view(-1, 1)
         loss_hat = self.smooth_loss.get(sz)
-        # loss_min = self.smooth_loss.get(torch.zeros_like(sz))
+        # loss_min = self.smooth_loss.get(np.zeros_like(sz))
         # return ((loss_min - loss_hat) *
         #             self._gauss_cdf(loss_min, loss_hat, s_hat) +
         #             v_hat * self._gauss_pdf(loss_min, loss_hat, s_hat))
         return loss_hat - .0000001*s_hat
 
     def _gauss_pdf(self, s, mu, sigma):
-        if type(s) != torch.Tensor:
-            raise ValueError('s, mu and sigma must be pytorch tensors')
-        return torch.exp(-(s-mu)**2/(2*sigma**2)) / (2.*np.pi*sigma)
+        if type(s) != np.ndarray:
+            raise ValueError('s, mu and sigma must be numpy arrays')
+        return np.exp(-(s-mu)**2/(2*sigma**2)) / (2.*np.pi*sigma)
 
     def _gauss_cdf(self, s, mu, sigma):
-        if type(s) != torch.Tensor:
-            raise ValueError('s, mu and sigma must be pytorch tensors')
-        return 1./2. * (1 + torch.erf((s - mu) / (np.sqrt(2)*sigma)))
+        if type(s) != np.ndarray:
+            raise ValueError('s, mu and sigma must be numpy arrays')
+        return 1./2. * (1 + erf((s - mu) / (np.sqrt(2)*sigma)))

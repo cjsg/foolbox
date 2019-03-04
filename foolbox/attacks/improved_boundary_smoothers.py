@@ -27,44 +27,53 @@ class Smoother(ABC):
     def __repr__(self):
         return str(self.value)
 
+    def __bool__(self):
+        return bool(self.value)
+
+    def __neg__(self):
+        return -self.value
+
     def __add__(self, other):
         return self.value + other
+
+    def __radd__(self, other):
+        return self.__add__(other)
 
     def __sub__(self, other):
         return self.value - other
 
+    def __rsub__(self, other):
+        return -self.__sub__(other)
+
     def __mul__(self, other):
         return self.value * other
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
 
     def __pow__(self, other):
         return self.value ** other
 
+    def __rpow__(self, other):
+        return other ** self.value
+
     def __div__(self, other):
         return self.value / other
+
+    def __rdiv__(self, other):
+        return other / self.value
 
     def __floordiv__(self, other):
         return self.value // other
 
+    def __rfloordiv__(self, other):
+        return other // self.value
+
     def __mod__(self, other):
         return self.value % other
 
-    def __lshift__(self, other):
-        return self.value << other
-
-    def __rshift__(self, other):
-        return self.value >> other
-
-    def __and__(self, other):
-        return self.value & other
-
-    def __or__(self, other):
-        return self.value | other
-
-    def __xor__(self, other):
-        return self.value ^ other
-
-    def __not__(self, other):
-        return ~self.value
+    def __rmod__(self, other):
+        return other % self.value
 
     def __lt__(self, other):
         return self.value < other
@@ -128,7 +137,8 @@ class ExponentialSmoother(Smoother):
 
     """
 
-    def __init__(self, lam=.1, v=None, fade_in=True):
+    def __init__(self, lam=.1, fade_in=True, v=None):
+        super(ExponentialSmoother, self).__init__()
         self.lam = lam
         self.v = v
         self.fade_in = fade_in
@@ -144,6 +154,9 @@ class ExponentialSmoother(Smoother):
                 self.v = ((1-self.lam)*self.v + v) / self.total_weight
             else:
                 self.v = (1-self.lam)*self.v + self.lam*v
+
+    def get(self, dx=0.):
+        return self.v
 
     @property
     def value(self):
@@ -196,7 +209,8 @@ class DoubleExponentialSmoother(Smoother):
 
     """
 
-    def __init__(self, lam=.1, v=None, fade_in=True):
+    def __init__(self, lam=.1, fade_in=True, v=None):
+        super(DoubleExponentialSmoother, self).__init__()
         self.lam = lam
         self.s1 = self.s2 = v
         self.fade_in = fade_in
