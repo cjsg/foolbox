@@ -1,3 +1,5 @@
+import abc
+import sys
 import numpy as np
 from scipy.special import erf
 from .improved_boundary_smoothers import DoubleExponentialSmoother
@@ -5,18 +7,42 @@ from .improved_boundary_smoothers import DoubleExponentialSmoother
 # only for GPstepSizeHandler
 from collections import deque
 
+abstractmethod = abc.abstractmethod
 
-class ConstantStepSizeHandler(object):
+if sys.version_info >= (3, 4):
+    ABC = abc.ABC
+else:  # pragma: no cover
+    ABC = abc.ABCMeta('ABC', (), {})
+
+
+class StepSizeHandler(ABC):
+    def __init__(self, *args, **kwargs):
+        return
+
+    @abstractmethod
+    def update(self, *args, **kwargs):
+        """Should update the step-size and returns the new step-size"""
+        raise NotImplementedError
+
+    def __repr__(self):
+        string = 'Step-size handler with parameters:'
+        for key, val in self.__dict__.items():
+            string += '\n' + key + ': ' + str(val)
+        return string
+
+
+class ConstantStepSizeHandler(StepSizeHandler):
     """A step size handler that keeps the step-size constant.
     """
     def __init__(self, initial_sz):
+        super(ConstantStepSizeHandler, self).__init__()
         self.sz = initial_sz
 
     def update(self, *args, **kwargs):
         return self.sz
 
 
-class RLStepSizeHandler(object):
+class RLStepSizeHandler(StepSizeHandler):
     """An Reinforcement Learning type of step-size updater.
 
     Each step-size sz gets sampled from a Gaussian with mean sz_mean and
@@ -28,6 +54,7 @@ class RLStepSizeHandler(object):
 
     """
     def __init__(self, initial_sz, eps=.025, lam=.05, use_sign=True):
+        super(RLStepSizeHandler, self).__init__()
         self.sz = initial_sz  # step_size
         self.sz_mean = initial_sz
         self.sz_mean_std_ratio = 5.
@@ -74,7 +101,7 @@ class RLStepSizeHandler(object):
         return self.sz
 
 
-class BallesStepSizeHandler(object):
+class BallesStepSizeHandler(StepSizeHandler):
     """Use a step-size update inspired from equation (22) in [1]_
 
     .. _[1]: Lukas Balles, Javier Romero, Philipp Hennig, "Coupling Adaptive
@@ -83,6 +110,7 @@ class BallesStepSizeHandler(object):
 
     """
     def __init__(self, initial_sz, lam=.1, update_every=20):
+        super(BallesStepSizeHandler, self).__init__()
         self.sz = initial_sz  # step_size
         self.initial_sz = initial_sz
         self.prev_loss = None
@@ -130,7 +158,7 @@ class BallesStepSizeHandler(object):
                 ((self.dloss_var_sum / self.n) / self.initial_var))
 
 
-class BasicStepSizeHandler(object):
+class BasicStepSizeHandler(StepSizeHandler):
     """Basic step size handler.
 
     If loss increases (resp. decreases) over n_wait_consecutive steps, then
@@ -145,6 +173,7 @@ class BasicStepSizeHandler(object):
                  n_wait_consecutive=3,
                  n_wait_non_adv=30):
 
+        super(BasicStepSizeHandler, self).__init__()
         self.sz = initial_sz  # step_size
         self.prev_loss = 0
         self.consecutive_loss_incr = 0
@@ -192,7 +221,7 @@ class BasicStepSizeHandler(object):
         return self.sz
 
 
-class GPStepSizeHandler(object):
+class GPStepSizeHandler(StepSizeHandler):
     """A GP-based step-size handler
 
     TODO: comment and improve. Pragma: No cover.
@@ -200,6 +229,7 @@ class GPStepSizeHandler(object):
     """
 
     def __init__(self, initial_sz, lam=.1):
+        super(GPStepSizeHandler, self).__init__()
         self.sz = initial_sz  # step_size
         self.initial_sz = initial_sz
         self.smooth_loss = DoubleExponentialSmoother(lam=lam, fade_in=True)
