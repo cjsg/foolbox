@@ -1,5 +1,6 @@
 import warnings
 import numpy as np
+import matplotlib.pyplot as plt
 
 from .improved_boundary_utils import get_label, compute_cos
 from .improved_boundary_smoothers import DoubleExponentialSmoother
@@ -39,10 +40,11 @@ class ImprovedBoundaryAttack(Attack):
                  unpack=True,
                  starting_point=None,
                  initialization_attack=None,
-                 n_sampling_steps=5000,
+                 steps=5000,
                  step_size=.01,
                  use_parallel_norm=True,
-                 print_every=10,
+                 print_every=0,
+                 plot_images=False,
                  bias_towards_adv=.2,
                  stochastic=False,
                  sz_handler=None,
@@ -74,15 +76,16 @@ class ImprovedBoundaryAttack(Attack):
         initialization_attack : :class:`Attack`
             Attack to use to find a starting point. Defaults to
             BlendedUniformNoiseAttack.
-        n_sampling_steps : int
-            Maximal number of sampling/optimization steps
+        steps : int
+            Number of steps along the boundary. Default: 5000
         step_size : float
             Initial step-size when doing image update
         use_parallel_norm : bool
             If True, make steps of size step_size * G_parallel_norm. Otherwise,
             normalizes the component parallel to the boundary by its norm.
         print_every : int
-            Print logging info every `print_every` steps.
+            Print logging info every `print_every` steps.  Must be >= 0. If 0,
+            then no printing. Default: 0.
         bias_towards_adv : float
             Bias of the perpendicular component towards preferring adversarial
             examples. Must be between -1 and 1, where 1. means 'by default,
@@ -90,25 +93,25 @@ class ImprovedBoundaryAttack(Attack):
             adversarial direction'.
         stochastic : bool
             Use stochastic labeling (i.e. use the network's logits).
-        sz_handler :
+        sz_handler : :class:`StepSizeHandler`
             A step-size handler.
             Default: RLStepSizeHandler(initial_sz=step_size)
-        W_sampler :
+        W_sampler : :class:`Sampler`
             A perturbation sampler to estimate to get a new boundary-weight
             estimations. Default: GaussianSampler(...)
         perturb_size : float
             The norm of the perturbation to be used when estimating a new
             weight with weight_estimate. Must be > 0. Used only if
             W_sampler is not provided.
-        W :
+        W : :class:`Smoother`
             Used to track and smooth the current boundary-weight estimate.
             Default: DoubleExponentialSmoother(lam=W_actu,
                                                fade_in=True)
-        W_actu :
+        W_actu : float
             The actualization coefficient when updating W. Must be between 0
             and 1 (included) with 1 meaning no smoothing. Used only if W is not
             provided.
-        perp :
+        perp : :class:`Smoother`
             Used to track and smooth the current perpendicular component size.
             Default: DoubleExponentialSmoother(lam=perp_actu,
                                                fade_in=True)
@@ -163,9 +166,7 @@ class ImprovedBoundaryAttack(Attack):
         perp.update(bias_towards_adv)
 
         # Initialize progress monitoring variables
-        dist = np.sqrt(
-                    (max_ - min_)**2 * X.size *
-                    a.normalized_distance(X).value)
+        dist = np.sqrt(X.size * a.normalized_distance(X).value)
         c_o = y_o if classes is None else classes[y_o]
         c = y if classes is None else classes[y]
         count_no_grad = 0
@@ -176,17 +177,21 @@ class ImprovedBoundaryAttack(Attack):
         all_sz = [step_size]
         all_cos = [compute_cos(W, X, a)]
 
-        print('Origin/target class: %s, '
-              'Original adversary: %s '
-              'Original distance: %.2f' % (c_o, c, dist))
+        if plot_images:
+            f, axs = plt.subplots(1, 4, figsize=(13, 3.5))
 
-        for i in range(n_sampling_steps):
+        if print_every > 0:
+            print('Origin/target class: %s, '
+                  'Original adversary: %s '
+                  'Original distance: %.2f' % (c_o, c, dist))
+
+        for i in range(steps):
             logits, is_adv = a.predictions(X)
             y = get_label(logits)
             c = y if classes is None else classes[y]
             non_adv = int(not is_adv)
 
-            W_ = W_sampler(X, y, a, W)
+            W_, X_ = W_sampler(a, X, y)
             W.update(W_)
             cur_cos = compute_cos(W, X, a)  # monitor cos btw W and true grad
 
@@ -199,9 +204,7 @@ class ImprovedBoundaryAttack(Attack):
             step_size = sz_handler.update(dist, non_adv)
 
             # Monitor progress
-            dist = np.sqrt(
-                    (max_ - min_) * X.size *
-                    a.normalized_distance(X).value)
+            dist = np.sqrt(X.size * a.normalized_distance(X).value)
             cos_sum += cur_cos
             step_size_sum += step_size
             count_non_adv += non_adv
@@ -210,8 +213,8 @@ class ImprovedBoundaryAttack(Attack):
             all_sz.append(step_size)
             all_cos.append(cur_cos)
 
-            if (i+1) % print_every == 0:
-                print('ep: %04d neval: %3.1f dist: %5.2f cos:% 3.2f '
+            if (print_every > 0) and ((i+1) % print_every == 0):
+                print('ep: %04d neval: %3.1f dist: %5.3f cos:% 3.2f '
                       'no_g:%3.0f%% not_adv:%3.0f%% lam_pe:% 3.2f sz:% '
                       '6.5f yt: %-6s y: %s' % (
                           i, get_label.count/i, dist, cos_sum/print_every,
@@ -222,6 +225,11 @@ class ImprovedBoundaryAttack(Attack):
                 count_non_adv = 0
                 step_size_sum = 0.
                 cos_sum = 0.
+
+                if plot_images:
+                    self.show_images(axs, a, X_)
+                    f.tight_layout()
+                    f.canvas.draw()
 
     def initialize_starting_point(self, a):
         starting_point = self._starting_point
@@ -258,15 +266,31 @@ class ImprovedBoundaryAttack(Attack):
         init_attack(a)
 
     def initialize_weights(self, a, W, W_sampler, steps=0):
-        X_t = a.original_image
+        X_o = a.original_image
         X = a.image
         y = a.adversarial_class
 
         W.update(10e-6 * np.random.randn(*X.shape))
 
         for _ in range(steps):
-            W_, _ = W_sampler(X, y, a, W, X_t)
+            W_, _ = W_sampler(X, y, a, W, X_o)
             W.update(W_)
+
+    def show_images(self, axs, a, X_d):
+        X_o = a.original_image / 5 + .5  # unnormalize
+        X_a = a.image / 5 + .5
+        X_d = X_d / 5 + .5
+        dX = (X_a - X_o + .5).clip(0., 1.)
+
+        axs[0].clear()
+        axs[1].clear()
+        axs[2].clear()
+        axs[3].clear()
+
+        axs[0].imshow(np.transpose(X_o, (1, 2, 0)))
+        axs[1].imshow(np.transpose(X_a, (1, 2, 0)))
+        axs[2].imshow(np.transpose(X_d, (1, 2, 0)))
+        axs[3].imshow(np.transpose(dX, (1, 2, 0)))
 
 
 def update_img(W, X, a, step_size,
