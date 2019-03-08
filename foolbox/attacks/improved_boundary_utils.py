@@ -131,7 +131,7 @@ def compute_cos(W, X, a):
     # logits = a.output
     # y_a = get_label(logits, stochastic=False, count=False)
 
-    in_gradient = np.zeros(a.num_classes()).astype('float32')
+    in_gradient = np.zeros(a.num_classes()).astype(X.dtype)
     in_gradient[y_t] = 1
     in_gradient[y_a] = -1
 
