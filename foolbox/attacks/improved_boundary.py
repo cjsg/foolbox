@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 from .improved_boundary_utils import get_label, compute_cos
 from .improved_boundary_smoothers import DoubleExponentialSmoother
-from .improved_boundary_stepsize import ConstantStepSizeHandler
+from .improved_boundary_stepsize import RLStepSizeHandler
 from .improved_boundary_samplers import GaussianSampler
 
 from .base import Attack
@@ -42,14 +42,14 @@ class ImprovedBoundaryAttack(Attack):
                  initialization_attack=None,
                  steps=5000,
                  step_size=.01,
+                 sz_handler=None,
                  use_parallel_norm=True,
                  print_every=0,
                  plot_images=False,
                  bias_towards_adv=.2,
                  stochastic=False,
-                 sz_handler=None,
                  W_sampler=None,
-                 perturb_size=.5,
+                 perturb_size=.1,
                  W=None,
                  W_actu=.0005,
                  perp=None,
@@ -80,6 +80,9 @@ class ImprovedBoundaryAttack(Attack):
             Number of steps along the boundary. Default: 5000
         step_size : float
             Initial step-size when doing image update
+        sz_handler : :class:`StepSizeHandler`
+            A step-size handler.
+            Default: RLStepSizeHandler(initial_sz=step_size)
         use_parallel_norm : bool
             If True, make steps of size step_size * G_parallel_norm. Otherwise,
             normalizes the component parallel to the boundary by its norm.
@@ -93,9 +96,6 @@ class ImprovedBoundaryAttack(Attack):
             adversarial direction'.
         stochastic : bool
             Use stochastic labeling (i.e. use the network's logits).
-        sz_handler : :class:`StepSizeHandler`
-            A step-size handler.
-            Default: RLStepSizeHandler(initial_sz=step_size)
         W_sampler : :class:`Sampler`
             A perturbation sampler to estimate to get a new boundary-weight
             estimations. Default: GaussianSampler(...)
@@ -136,7 +136,7 @@ class ImprovedBoundaryAttack(Attack):
 
         if sz_handler is None:
             # Constant-, RL-, Balles-, Basic-, GP- StepSizeHandler
-            sz_handler = ConstantStepSizeHandler(initial_sz=step_size)
+            sz_handler = RLStepSizeHandler(initial_sz=step_size)
         if W_sampler is None:
             # Optimal-, Pixel-, Gaussian-, Image-Sampler()
             W_sampler = \
@@ -182,7 +182,7 @@ class ImprovedBoundaryAttack(Attack):
 
         if print_every > 0:
             print('Origin/target class: %s, '
-                  'Original adversary: %s '
+                  'Original adversary: %s, '
                   'Original distance: %.2f' % (c_o, c, dist))
 
         for i in range(steps):
@@ -198,7 +198,7 @@ class ImprovedBoundaryAttack(Attack):
             perp.update(2*non_adv-1)
             biased_perp = np.clip(perp + bias_towards_adv, -1, 1)
 
-            update_img(W, X, a, step_size,  # *dist/all_dist[0]
+            update_img(X, W, a, step_size,  # *dist/all_dist[0]
                        biased_perp, use_parallel_norm)
 
             step_size = sz_handler.update(dist, non_adv)
@@ -254,6 +254,7 @@ class ImprovedBoundaryAttack(Attack):
             assert a.image is not None, ('Invalid starting point provided.'
                                          ' Please provide a starting point'
                                          ' that is adversarial.')
+            self.find_boundary(a, starting_point)
             return
 
         if init_attack is None:
@@ -264,6 +265,27 @@ class ImprovedBoundaryAttack(Attack):
             init_attack = init_attack()
 
         init_attack(a)
+
+    def find_boundary(self, a, starting_point):
+        X_o = a.original_image
+        y_o = a.original_class
+
+        X_a = starting_point
+        logits_a, is_adv = a.predictions(X_a)
+        assert is_adv, ('Invalid starting point prodied.')
+
+        p = 1.
+        dp = .5
+        sgn = -1
+        while dp > .01:
+            p += sgn * dp
+            dp /= 2
+            X = (1-p) * X_o + p * X_a
+            logits, _ = a.predictions(X)  # silently updates a.image if adv
+            y = get_label(logits, stochastic=False)
+            sgn = 1 if y == y_o else -1
+
+        return
 
     def initialize_weights(self, a, W, W_sampler, steps=0):
         X_o = a.original_image
@@ -277,23 +299,28 @@ class ImprovedBoundaryAttack(Attack):
             W.update(W_)
 
     def show_images(self, axs, a, X_d):
-        X_o = a.original_image / 5 + .5  # unnormalize
-        X_a = a.image / 5 + .5
-        X_d = X_d / 5 + .5
+        min_, max_ = a.bounds()
+
+        X_o = (a.original_image - min_) / (max_ - min_)
+        X_a = (a.image - min_) / (max_ - min_)
+        X_d = (X_d - min_) / (max_ - min_)
         dX = (X_a - X_o + .5).clip(0., 1.)
+
+        channel_axis = a.channel_axis(batch=False)
+        transp = (1, 2, 0) if channel_axis == 0 else (0, 1, 2)
 
         axs[0].clear()
         axs[1].clear()
         axs[2].clear()
         axs[3].clear()
 
-        axs[0].imshow(np.transpose(X_o, (1, 2, 0)))
-        axs[1].imshow(np.transpose(X_a, (1, 2, 0)))
-        axs[2].imshow(np.transpose(X_d, (1, 2, 0)))
-        axs[3].imshow(np.transpose(dX, (1, 2, 0)))
+        axs[0].imshow(np.transpose(X_o, transp))
+        axs[1].imshow(np.transpose(X_a, transp))
+        axs[2].imshow(np.transpose(X_d, transp))
+        axs[3].imshow(np.transpose(dX, transp))
 
 
-def update_img(W, X, a, step_size,
+def update_img(X, W, a, step_size,
                perp=.5, use_parallel_norm=False):
 
     w = W.flatten()
