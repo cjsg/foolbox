@@ -52,7 +52,7 @@ class PixelSampler(Sampler):
         sgn = -1 if y == a.original_class else 1
         ix = self.sample_random_ix(X)
         dX = np.zeros_like(X)
-        dX[ix] = 1.
+        dX[ix] = max_ - min_  # make perturb. size proportional to bounds
 
         X_ = np.clip(X + eps * dX, min_, max_)
         logits, _ = a.predictions(X_)
@@ -79,17 +79,52 @@ class PixelSampler(Sampler):
 
 
 class GaussianSampler(Sampler):
-    def __init__(self, perturb_size=.5, *args, **xargs):
+    def __init__(self, perturb_size=.5, avg_pool_k=1, *args, **xargs):
+        """Sample Gaussian perturbation and check if sign can be flipped
+
+        preturb_size : float
+            Perturbation size. Perturbation gets sampled from a Gaussian,
+            then normalized by its l2-norm, then multiplied by the pixel
+            bounds, then multiplied by perturb_size.
+        avg_pool_k : int
+            How many pixels to group when generating the perturbation. Defaults
+            to 1. If > 1, then Gaussian perturbation is generated with
+            dimensions height / avg_pool_k and width / avg_pool_k and
+            supsampled to fir the original image size. Then follows the upper
+            normalization.
+
+        """
+
         super(GaussianSampler, self).__init__()
         self.perturb_size = perturb_size
+        self.avg_pool_k = avg_pool_k
 
     def __call__(self, a, X, y, *args, **xargs):
         min_, max_ = a.bounds()
         eps = self.perturb_size
         X_o = a.original_image
 
-        dX = np.random.randn(*X.shape).astype('float32')
-        dX = dX / np.linalg.norm(dX)
+        shape = list(X.shape)
+        channel_axis = a.channel_axis(batch=False)
+        assert shape[1] % self.avg_pool_k == 0
+
+        if X.ndim == 3 and channel_axis == 0:
+            shape[1] //= self.avg_pool_k
+            shape[2] //= self.avg_pool_k
+        elif X.ndim == 3 and channel_axis == 2:
+            shape[0] //= self.avg_pool_k
+            shape[1] //= self.avg_pool_k
+        elif X.ndim == 4 and channel_axis == 0:
+            shape[2] //= self.avg_pool_k
+            shape[3] //= self.avg_pool_k
+        elif X.ndim == 4 and channel_axis == 2:
+            shape[1] //= self.avg_pool_k
+            shape[2] //= self.avg_pool_k
+
+        dX = np.random.randn(*shape).astype(X.dtype)
+        dX = self.upsample(dX, self.avg_pool_k, channel_axis)
+
+        dX = dX / np.linalg.norm(dX) * (max_ - min_)
         sgn = -1 if y == a.original_class else 1
 
         # if np.sign((dX * W).sum()) < 0.:
@@ -112,6 +147,18 @@ class GaussianSampler(Sampler):
 
         return np.zeros_like(X), X_
 
+    def upsample(self, X, k, channel_axis):
+        assert channel_axis in {0, 2}, ('Channel axis must be 0 or 2')
+
+        if X.ndim == 3 and channel_axis == 0:
+            return X.repeat(k, axis=1).repeat(k, axis=2)
+        elif X.ndim == 3 and channel_axis == 2:
+            return X.repeat(k, axis=0).repeat(k, axis=1)
+        elif X.ndim == 4 and channel_axis == 0:
+            return X.repeat(k, axis=2).repeat(k, axis=3)
+        elif X.ndim == 4 and channel_axis == 2:
+            return X.repeat(k, axis=1).repeat(k, axis=2)
+
 
 class OptimalSampler(Sampler):
     def __init__(self, *args, **xargs):
@@ -122,7 +169,7 @@ class OptimalSampler(Sampler):
         y_o = a.original_class
         y_a = a.adversarial_class
 
-        in_gradient = np.zeros(a.num_classes()).astype('float32')
+        in_gradient = np.zeros(a.num_classes()).astype(X.dtype)
         in_gradient[y_o] = 1
         in_gradient[y_a] = -1
 
@@ -151,9 +198,7 @@ class ImageSampler(Sampler):
         self.crop_size = crop_size
 
         if loader is None:
-            transform = transforms.Compose(
-                    [transforms.ToTensor(),
-                     transforms.Normalize((0.5, 0.5, 0.5), (0.2, 0.2, 0.2))])
+            transform = transforms.ToTensor()
 
             trainset = torchvision.datasets.CIFAR10(
                             root=datafolder, train=True,
@@ -179,7 +224,8 @@ class ImageSampler(Sampler):
             dX, _ = next(self.dataiter)
 
         dX = dX.detach().cpu().numpy().reshape(*X.shape)
-        dX = dX / np.linalg.norm(dX)
+        dX = (dX - min_) / (max_ - min_)  # normalizing data
+        dX = dX / np.linalg.norm(dX) * (max_ - min_)
         sgn = -1 if y == a.original_class else 1
 
         if self.crop_size is not None:
@@ -212,7 +258,7 @@ class PlugPatchSampler(Sampler):
                  crop_size=5,
                  loader=None,
                  datafolder='~/datasets/cifar10/',
-                 *args, **xargs):
+                 *args, **kwargs):
 
         import torch
         import torchvision
@@ -222,9 +268,7 @@ class PlugPatchSampler(Sampler):
         self.crop_size = crop_size
 
         if loader is None:
-            transform = transforms.Compose(
-                    [transforms.ToTensor(),
-                     transforms.Normalize((0.5, 0.5, 0.5), (0.2, 0.2, 0.2))])
+            transform = transforms.ToTensor()
 
             trainset = torchvision.datasets.CIFAR10(
                             root=datafolder, train=True,
@@ -248,6 +292,7 @@ class PlugPatchSampler(Sampler):
             dX, _ = next(self.dataiter)
 
         dX = dX.squeeze(0).detach().cpu().numpy()
+        dX = (dX - min_) / (max_ - min_)  # normalize input
         # Note that ||dX||_2 \neq 1 anymore if cropping
         dX, mask = extract_img_patch(dX, size=self.crop_size, with_mask=True)
         X_ = X * (np.ones_like(X) - mask) + dX
