@@ -1,6 +1,6 @@
 import warnings
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 from .improved_boundary_utils import get_label, compute_cos
 from .improved_boundary_smoothers import DoubleExponentialSmoother
@@ -177,8 +177,8 @@ class ImprovedBoundaryAttack(Attack):
         all_sz = [step_size]
         all_cos = [compute_cos(W, X, a)]
 
-        if plot_images:
-            f, axs = plt.subplots(1, 4, figsize=(13, 3.5))
+        #if plot_images:
+        #    f, axs = plt.subplots(1, 4, figsize=(13, 3.5))
 
         if print_every > 0:
             print('Origin/target class: %s, '
