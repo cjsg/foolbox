@@ -85,47 +85,10 @@ def softmax(X, theta=1.0, axis=None):
     return p
 
 
-def find_boundary(a, X2):
-    """Find image on the classification boundary between X1 and X2.
-
-    Computes get_label(net(X)) for every X on the line from X1 to X2 with
-    step-size .01 and stops after the first label switch. find_boundary returns
-    an error if net assigns the same label to X1 and X2.
-
-    a : :class:`Adversarial`
-        An :class:`Adversarial` instance.
-    X2 : `numpy.ndarray`
-        Any image that does not get assigned the same label than
-        a.original_class.
-
-    """
-
-    X1 = a.original_image
-    y1 = a.original_class
-
-    logits = a.predictions(X2)
-    y2 = get_label(logits, stochastic=False, count=False)
-
-    if y1 == y2:
-        raise Exception(
-                'net needs to output different classes for X1 and X2. But\n' +
-                'y1 = %r\ny2=%r' % (y1, y2))
-    X_prev = X1
-    for p in np.arange(0, 1, .01):
-        X = (1-p)*X1 + p*X2
-        logits = a.predictions(X)
-        y = get_label(logits, stochastic=False, count=False)
-        if y != y1:
-            break
-        X_prev = X
-
-    # X = first img along (X1->X2)-line with different label than X1
-    # X_prev = last img along (X1->X2)-line with same label than X
-    # p = weight s.t. X = (1-p)*X1 + p*X2
-    return X, X_prev, p
-
-
 def compute_cos(W, X, a):
+    if not a.has_gradient():
+        return np.nan
+
     y_t = a.original_class
     y_a = a.adversarial_class
     # logits = a.output
@@ -141,3 +104,48 @@ def compute_cos(W, X, a):
     g = G.flatten()
 
     return (w * g).sum() / (np.linalg.norm(w) * np.linalg.norm(g))
+
+
+# ### Old find_boundary with linear search ####
+# ### New find_boundary uses binary search ####
+# ### Now placed in improved_boundary.py   ####
+# 
+# def find_boundary(a, X2):
+#     """Find image on the classification boundary between X1 and X2.
+# 
+#     Computes get_label(net(X)) for every X on the line from X1 to X2 with
+#     step-size .01 and stops after the first label switch. find_boundary returns
+#     an error if net assigns the same label to X1 and X2.
+# 
+#     a : :class:`Adversarial`
+#         An :class:`Adversarial` instance.
+#     X2 : `numpy.ndarray`
+#         Any image that does not get assigned the same label than
+#         a.original_class.
+# 
+#     """
+# 
+#     X1 = a.original_image
+#     y1 = a.original_class
+# 
+#     logits = a.predictions(X2)
+#     y2 = get_label(logits, stochastic=False, count=False)
+# 
+#     if y1 == y2:
+#         raise Exception(
+#                 'net needs to output different classes for X1 and X2. But\n' +
+#                 'y1 = %r\ny2=%r' % (y1, y2))
+#     X_prev = X1
+#     for p in np.arange(0, 1, .01):
+#         X = (1-p)*X1 + p*X2
+#         logits = a.predictions(X)
+#         y = get_label(logits, stochastic=False, count=False)
+#         if y != y1:
+#             break
+#         X_prev = X
+# 
+#     # X = first img along (X1->X2)-line with different label than X1
+#     # X_prev = last img along (X1->X2)-line with same label than X
+#     # p = weight s.t. X = (1-p)*X1 + p*X2
+#     return X, X_prev, p
+

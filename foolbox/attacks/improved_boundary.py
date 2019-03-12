@@ -54,6 +54,7 @@ class ImprovedBoundaryAttack(Attack):
                  W_actu=.0005,
                  perp=None,
                  perp_actu=.08,
+                 has_gradient=None,
                  classes=None):
 
         """Applies the improved boundary attack.
@@ -119,6 +120,10 @@ class ImprovedBoundaryAttack(Attack):
             The smoothing coefficient when updating the perpendicular
             component. Must be between 0 and 1 (included) with 1 meaning no
             smoothing. Used only if perp is not provided.
+        has_gradient : boolean
+            If False, model is assumed to have no gradients so that no logging
+            operation using gradients will be done. Defaults to True if the
+            model is a :class:`DifferentiableModel` and False otherwise.
         classes : list of strings
             The class labels for each output coordinate of the model.
             len(classes) should be equal to the output size of the model.
@@ -133,7 +138,7 @@ class ImprovedBoundaryAttack(Attack):
         assert ((classes is None) or (len(classes) == a.num_classes()))
 
         min_, max_ = a.bounds()
-
+        
         if sz_handler is None:
             # Constant-, RL-, Balles-, Basic-, GP- StepSizeHandler
             sz_handler = RLStepSizeHandler(initial_sz=step_size)
@@ -151,6 +156,9 @@ class ImprovedBoundaryAttack(Attack):
             perp = \
                 DoubleExponentialSmoother(lam=perp_actu,
                                           fade_in=True)
+        if has_gradient is not None:
+            # overwrite the has_grad method
+            a.has_gradient = lambda : has_gradient
 
         get_label.count = 0
         get_label.stochastic = stochastic
@@ -165,71 +173,77 @@ class ImprovedBoundaryAttack(Attack):
         self.initialize_weights(a, W, W_sampler, steps=0)
         perp.update(bias_towards_adv)
 
-        # Initialize progress monitoring variables
         dist = np.sqrt(X.size * a.normalized_distance(X).value)
-        c_o = y_o if classes is None else classes[y_o]
-        c = y if classes is None else classes[y]
-        count_no_grad = 0
-        count_non_adv = 0
-        step_size_sum = 0.
-        cos_sum = 0.
-        all_dist = [dist]
-        all_sz = [step_size]
-        all_cos = [compute_cos(W, X, a)]
 
-        #if plot_images:
-        #    f, axs = plt.subplots(1, 4, figsize=(13, 3.5))
-
+        # Initialize logging variables
         if print_every > 0:
+            c_o = y_o if classes is None else classes[y_o]
+            c = y if classes is None else classes[y]
+            cos_sum = 0.
+            count_no_grad = 0
+            count_non_adv = 0
+            step_size_sum = 0.
+            all_dist = [dist]
+            all_sz = [step_size]
+            all_cos = [compute_cos(W, X, a)]
+
             print('Origin/target class: %s, '
                   'Original adversary: %s, '
                   'Original distance: %.2f' % (c_o, c, dist))
 
+            if plot_images:
+                import matplotlib.pyplot as plt  # lazy import
+                f, axs = plt.subplots(1, 4, figsize=(13, 3.5))
+
         for i in range(steps):
             logits, is_adv = a.predictions(X)
             y = get_label(logits)
-            c = y if classes is None else classes[y]
             non_adv = int(not is_adv)
 
             W_, X_ = W_sampler(a, X, y)
             W.update(W_)
-            cur_cos = compute_cos(W, X, a)  # monitor cos btw W and true grad
 
             perp.update(2*non_adv-1)
             biased_perp = np.clip(perp + bias_towards_adv, -1, 1)
 
-            update_img(X, W, a, step_size,  # *dist/all_dist[0]
+            update_img(X, W, a, step_size,
                        biased_perp, use_parallel_norm)
 
             step_size = sz_handler.update(dist, non_adv)
 
-            # Monitor progress
             dist = np.sqrt(X.size * a.normalized_distance(X).value)
-            cos_sum += cur_cos
-            step_size_sum += step_size
-            count_non_adv += non_adv
-            count_no_grad += int(np.all(W_ <= 1e-7))
-            all_dist.append(dist)
-            all_sz.append(step_size)
-            all_cos.append(cur_cos)
 
-            if (print_every > 0) and ((i+1) % print_every == 0):
-                print('ep: %04d neval: %3.1f dist: %5.3f cos:% 3.2f '
-                      'no_g:%3.0f%% not_adv:%3.0f%% lam_pe:% 3.2f sz:% '
-                      '6.5f yt: %-6s y: %s' % (
-                          i, get_label.count/i, dist, cos_sum/print_every,
-                          count_no_grad*100/print_every,
-                          count_non_adv*100/print_every,
-                          biased_perp, step_size_sum/print_every, c_o, c))
-                count_no_grad = 0
-                count_non_adv = 0
-                step_size_sum = 0.
-                cos_sum = 0.
+            # Monitor progress
+            if (print_every > 0): 
+                c = y if classes is None else classes[y]
+                cur_cos = compute_cos( W, X, a)  # cos btw W and true grad
+                                                 # ideally, should be placed
+                                                 # btw W.update & update_img
+                cos_sum += cur_cos
+                count_no_grad += int(np.all(W_ <= 1e-7))
+                count_non_adv += non_adv
+                step_size_sum += step_size
+                all_dist.append(dist)
+                all_sz.append(step_size)
+                all_cos.append(cur_cos)
 
-                if plot_images:
-                    self.show_images(axs, a, X_)
-                    f.tight_layout()
-                    f.canvas.draw()
+                if ((i+1) % print_every == 0):
+                    print('ep: %04d neval: %3.1f dist: %5.3f cos:% 3.2f '
+                          'no_g:%3.0f%% not_adv:%3.0f%% lam_pe:% 3.2f sz:% '
+                          '6.5f yt: %-6s y: %s' % (
+                              i, get_label.count/i, dist, cos_sum/print_every,
+                              count_no_grad*100/print_every,
+                              count_non_adv*100/print_every,
+                              biased_perp, step_size_sum/print_every, c_o, c))
+                    count_no_grad = 0
+                    count_non_adv = 0
+                    step_size_sum = 0.
+                    cos_sum = 0.
+
+                    if plot_images:
+                        self.show_images(axs, a, X_)
+                        f.tight_layout()
+                        f.canvas.draw()
 
     def initialize_starting_point(self, a):
         starting_point = self._starting_point
@@ -274,6 +288,7 @@ class ImprovedBoundaryAttack(Attack):
         logits_a, is_adv = a.predictions(X_a)
         assert is_adv, ('Invalid starting point prodied.')
 
+        # binary searach
         p = 1.
         dp = .5
         sgn = -1
@@ -306,18 +321,28 @@ class ImprovedBoundaryAttack(Attack):
         X_d = (X_d - min_) / (max_ - min_)
         dX = (X_a - X_o + .5).clip(0., 1.)
 
-        channel_axis = a.channel_axis(batch=False)
-        transp = (1, 2, 0) if channel_axis == 0 else (0, 1, 2)
+        if X_o.ndim < 3:
+            w = h = int(np.sqrt(X_o.shape[-1]))
+            X_o = X_o.reshape(w, h)
+            X_a = X_a.reshape(w, h)
+            X_d = X_d.reshape(w, h)
+            dX = dX.reshape(w, h)
 
+        elif a.channel_axis(batch=False) == 0:
+            X_o = np.transpose(X_o, (1, 2, 0))
+            X_a = np.transpose(X_a, (1, 2, 0))
+            X_d = np.transpose(X_d, (1, 2, 0))
+            dX = np.transpose(dX, (1, 2, 0))
+                
         axs[0].clear()
         axs[1].clear()
         axs[2].clear()
         axs[3].clear()
 
-        axs[0].imshow(np.transpose(X_o, transp))
-        axs[1].imshow(np.transpose(X_a, transp))
-        axs[2].imshow(np.transpose(X_d, transp))
-        axs[3].imshow(np.transpose(dX, transp))
+        axs[0].imshow(X_o)
+        axs[1].imshow(X_a)
+        axs[2].imshow(X_d)
+        axs[3].imshow(dX)
 
 
 def update_img(X, W, a, step_size,

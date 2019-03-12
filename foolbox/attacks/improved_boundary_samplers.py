@@ -105,25 +105,32 @@ class GaussianSampler(Sampler):
         X_o = a.original_image
 
         shape = list(X.shape)
-        channel_axis = a.channel_axis(batch=False)
-        assert shape[1] % self.avg_pool_k == 0
+        if X.ndim > 2:
+            channel_axis = a.channel_axis(batch=False)
+            assert shape[1] % self.avg_pool_k == 0
 
-        if X.ndim == 3 and channel_axis == 0:
-            shape[1] //= self.avg_pool_k
-            shape[2] //= self.avg_pool_k
-        elif X.ndim == 3 and channel_axis == 2:
-            shape[0] //= self.avg_pool_k
-            shape[1] //= self.avg_pool_k
-        elif X.ndim == 4 and channel_axis == 0:
-            shape[2] //= self.avg_pool_k
-            shape[3] //= self.avg_pool_k
-        elif X.ndim == 4 and channel_axis == 2:
-            shape[1] //= self.avg_pool_k
-            shape[2] //= self.avg_pool_k
+            if X.ndim == 3 and channel_axis == 0:
+                shape[1] //= self.avg_pool_k
+                shape[2] //= self.avg_pool_k
+            elif X.ndim == 3 and channel_axis == 2:
+                shape[0] //= self.avg_pool_k
+                shape[1] //= self.avg_pool_k
+            elif X.ndim == 4 and channel_axis == 0:
+                shape[2] //= self.avg_pool_k
+                shape[3] //= self.avg_pool_k
+            elif X.ndim == 4 and channel_axis == 2:
+                shape[1] //= self.avg_pool_k
+                shape[2] //= self.avg_pool_k
 
-        dX = np.random.randn(*shape).astype(X.dtype)
-        dX = self.upsample(dX, self.avg_pool_k, channel_axis)
-
+            dX = np.random.randn(*shape).astype(X.dtype)
+            dX = self.upsample(dX, self.avg_pool_k, channel_axis)
+        else:
+            if self.avg_pool_k > 1:
+                raise NotImplementedError(
+                        'avg_pool_k option is not implemented '
+                        'for flattened images')
+            dX = np.random.randn(*shape).astype(X.dtype)
+            
         dX = dX / np.linalg.norm(dX) * (max_ - min_)
         sgn = -1 if y == a.original_class else 1
 
@@ -166,6 +173,10 @@ class OptimalSampler(Sampler):
         return
 
     def __call__(self, a, X, *args, **xargs):
+        if not a.has_gradient():
+            raise Error('The OptimalSampler requires the model to be '
+                        'differentiable.')
+
         y_o = a.original_class
         y_a = a.adversarial_class
 
